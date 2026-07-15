@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<!--
+    ================================================
+    BRight | AI Data Hub - Main Application Page
+    Exploratory Data Analysis Platform v3.0
+    ================================================
+    This is the main frontend file for BRight AI's EDA platform.
+    It supports two operation modes:
+      - User Mode: Fully automated AI pipeline
+      - Developer Mode: Full manual control over preprocessing steps
+-->
+
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Page Title -->
+    <title>BRight | AI Data Hub</title>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <!-- Animate On Scroll (AOS) -->
+    <link href="https://cdn.jsdelivr.net/gh/michalsnik/aos@2.3.1/dist/aos.css" rel="stylesheet">
+
+    <!-- Project CSS Files -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/pipeline_style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app_shell.css') }}">
+
+</head>
+{% include "components/chatbot.html" %}
+
+<link rel="stylesheet" href="{{ url_for('static',filename='css/chatbot.css') }}">
+
+<body style="overflow: auto;" data-initial-mode="{{ mode|default('user') }}">
+
+    <!-- Global Error Message Container -->
+    <div id="error-message" class="error-message" style="display: none;"></div>
+
+    <div id="content-area">
+
+        <!-- ==================== MAIN APPLICATION ==================== -->
+        <div id="main-app" class="app-stage" data-aos="fade-up" data-aos-duration="1000">
+            <br>
+
+            <!-- Top Mode Bar (shared partial — identical markup/ids on every page) -->
+            {% include "components/mode_bar.html" %}
+
+            <!-- Hero Section -->
+            <header class="hero-section">
+                <div class="logo-top">BRight <span>AI</span></div>
+                <p>Intelligence Redefined for Your Datasets</p>
+            </header>
+
+            <!-- Main Form -->
+            <form id="main-ai-form" class="main-layout" enctype="multipart/form-data">
+
+                <!-- File Upload Section -->
+                <div class="glass-card browse-card">
+                    <div class="card-header cyan-glow">DATA SOURCE</div>
+                    <div class="browse-content">
+                        <div class="mini-icon">
+                            <i class="fas fa-file-upload"></i>
+                        </div>
+                        <p id="file-status"{% if dataset_filename %} style="color:#14ffd0;" title="{{ dataset_filename }}"{% endif %}>{{ dataset_filename if dataset_filename else 'Select Data File (CSV/Excel)' }}</p>
+                        <input type="file" id="real-file" name="file" hidden accept=".csv, .xlsx, .xls">
+                        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:4px;">
+                            <button type="button" class="action-btn cyan-btn"
+                                onclick="document.getElementById('real-file').click()">
+                                <i class="fas fa-search"></i> Browse
+                            </button>
+                            <button type="button" id="clear-file-btn" onclick="clearSelectedFile()"
+                                style="display:{{ 'inline-block' if dataset_filename else 'none' }};background:rgba(255,64,129,0.12);border:1px solid rgba(255,64,129,0.4);color:#ff4081;padding:8px 18px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:1.5px;cursor:pointer;transition:all 0.3s;text-transform:uppercase;font-family:Inter,sans-serif;">
+                                <i class="fas fa-times"></i> Clear Data
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI Engine Indicator -->
+                <div class="processing-hub">
+                    <p class="status-label">ENGINE READY</p>
+                </div>
+
+                <!-- Configuration Card -->
+                <div class="glass-card config-card">
+                    <div class="card-header purple-glow">Dataset Preview</div>
+
+                    <div class="field-group">
+                        <label>Data Inspection</label>
+                        <select name="action_type">
+                            <option value="summary">Basic Insight Report</option>
+                            <option value="predict">Detailed Report</option>
+                        </select>
+                    </div>
+
+                    <div class="field-group">
+                        <label>What will you mainly use this dataset for?</label>
+                        <select name="data_purpose" id="data-purpose-select">
+                            <option value="general" selected>General / Not sure yet</option>
+                            <option value="ml">Machine Learning (numeric model training)</option>
+                            <option value="nlp">NLP / Text Analysis (reviews, comments...)</option>
+                        </select>
+                        <div class="dev-hint" style="margin-top:6px;">
+                            ML fully encodes text columns into numbers so models can train on them.
+                            NLP needs those same columns kept as real, readable text — pick NLP and
+                            BRight AI will preserve any free-text column instead of encoding it away.
+                        </div>
+                    </div>
+
+
+
+                    <!-- Developer Controls -->
+                    <div id="dev-controls-panel">
+                        <p>Developer Controls Area</p>
+                        <div id="dev-controls-panel" class="dev-grid-layout">
+
+                            <div class="dev-card">
+                                <div class="dev-controls-title"><i class="fas fa-broom"></i> MISSING VALUES</div>
+
+                                <div class="dev-field">
+                                    <label>Null Drop Threshold <span class="dev-field-value"
+                                            id="null-threshold-value">40%</span></label>
+                                    <input type="range" id="null-threshold-slider" class="dev-slider"
+                                        name="null_threshold" min="0" max="1" step="0.05" value="0.4">
+                                    <div class="dev-hint">Columns with a null ratio above this value are dropped
+                                        entirely; below 5% rows are dropped; in between, nulls are filled.</div>
+                                </div>
+
+                                <div class="dev-field">
+                                    <label>Numeric Fill Strategy</label>
+                                    <div class="dev-pill-group" id="null-fill-strategy-group">
+                                        <div class="dev-pill-option selected" data-value="median">Median</div>
+                                        <div class="dev-pill-option" data-value="mean">Mean</div>
+                                        <div class="dev-pill-option" data-value="mode">Mode</div>
+                                    </div>
+                                    <input type="hidden" name="null_fill_strategy" id="null-fill-strategy-input"
+                                        value="median">
+                                    <div class="dev-hint">Categorical columns always use Mode.</div>
+                                </div>
+                            </div>
+
+                            <div class="dev-card">
+                                <div class="dev-controls-title"><i class="fas fa-layer-group"></i> OUTLIER DETECTION
+                                </div>
+
+                                <div class="dev-field">
+                                    <label>Outlier Detection Method</label>
+                                    <div class="dev-pill-group" id="outlier-method-group">
+                                        <div class="dev-pill-option selected" data-value="iqr">IQR</div>
+                                        <div class="dev-pill-option" data-value="zscore">Z-Score</div>
+                                    </div>
+                                    <input type="hidden" name="outlier_method" id="outlier-method-input" value="iqr">
+                                </div>
+
+                                <div class="dev-field" id="zscore-threshold-field">
+                                    <label>Z-Score Threshold <span class="dev-field-value"
+                                            id="zscore-threshold-value">3.0</span></label>
+                                    <input type="range" id="zscore-threshold-slider" class="dev-slider"
+                                        name="zscore_threshold" min="2.5" max="3.5" step="0.1" value="3.0">
+                                    <div class="dev-hint">Values with |Z| above this cutoff are treated as outliers.
+                                    </div>
+                                </div>
+
+                                <div class="dev-field">
+                                    <label>Outlier Strategy</label>
+                                    <div class="dev-pill-group" id="outlier-strategy-group">
+                                        <div class="dev-pill-option selected" data-value="cap">Cap (Clip)</div>
+                                        <div class="dev-pill-option" data-value="remove">Remove Rows</div>
+                                    </div>
+                                    <input type="hidden" name="outlier_strategy" id="outlier-strategy-input"
+                                        value="cap">
+                                    <div class="dev-hint">Capping keeps every row and clips values. Removal drops rows.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="dev-card">
+                                <div class="dev-controls-title"><i class="fas fa-cogs"></i> PIPELINE STAGES</div>
+
+                                <div class="dev-field">
+                                    <div class="dev-toggle-row">
+                                        <div>
+                                            <div class="dev-toggle-label">Smart Type Conversion</div>
+                                            <div class="dev-toggle-hint">Auto-detect dates & downcast numeric memory
+                                                usage</div>
+                                        </div>
+                                        <div class="dev-switch on" id="type-conversion-switch">
+                                            <div class="dev-switch-knob"></div>
+                                        </div>
+                                    </div>
+                                    <input type="hidden" name="do_type_conversion" id="type-conversion-input"
+                                        value="true">
+                                </div>
+
+                                <div class="dev-field">
+                                    <div class="dev-toggle-row">
+                                        <div>
+                                            <div class="dev-toggle-label">Remove Duplicate Rows</div>
+                                            <div class="dev-toggle-hint">Drop fully duplicated rows from the dataset
+                                            </div>
+                                        </div>
+                                        <div class="dev-switch on" id="remove-duplicates-switch">
+                                            <div class="dev-switch-knob"></div>
+                                        </div>
+                                    </div>
+                                    <input type="hidden" name="do_remove_duplicates" id="remove-duplicates-input"
+                                        value="true">
+                                </div>
+                            </div>
+
+                            <div class="dev-card">
+                                <div class="dev-controls-title"><i class="fas fa-table-columns"></i> COLUMNS & ENCODING
+                                </div>
+
+                                <div class="dev-field">
+                                    <label>Exclude Columns <span class="dev-field-value" id="exclude-count-value">0
+                                            selected</span></label>
+                                    <div class="dev-chip-input-wrap empty" id="exclude-columns-wrap"></div>
+                                    <input type="hidden" name="exclude_columns" id="exclude-columns-input" value="">
+                                    <div class="dev-hint">Populated after you upload a file.</div>
+                                </div>
+
+                                <div class="dev-field">
+                                    <label>Categorical Encoding</label>
+                                    <div class="dev-pill-group" id="encoding-method-group">
+                                        <div class="dev-pill-option selected" data-value="none">None</div>
+                                        <div class="dev-pill-option" data-value="label">Label</div>
+                                        <div class="dev-pill-option" data-value="onehot">One-Hot</div>
+                                    </div>
+                                    <input type="hidden" name="encoding_method" id="encoding-method-input" value="none">
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                    <button type="submit" class="submit-btn purple-btn" id="start-btn">
+                        <i class="fas fa-bolt"></i> START ENGINE
+                    </button>
+                </div>
+            </form>
+
+            <!-- Results Preview Area -->
+            <div id="results-area" class="glass-card result-container" style="display: none;">
+                <div class="card-header cyan-glow">ANALYSIS PREVIEW</div>
+
+                <div class="stats-bar">
+                    <i class="fas fa-table"></i> <span id="res-rows">Rows: 0</span> |
+                    <i class="fas fa-columns"></i> <span id="res-cols">Cols: 0</span>
+                </div>
+
+                <div id="table-preview" class="table-scroll"></div>
+
+                <div class="action-footer">
+                    <a href="#" id="view-btn" class="action-btn cyan-btn"
+                        onclick="event.preventDefault(); openReportModal(this.href);">
+                        <i class="fas fa-eye"></i> View Report
+                    </a>
+
+                    <a href="#" id="download-btn" class="action-btn purple-btn">
+                        <i class="fas fa-download"></i> Download Report
+                    </a>
+                </div>
+            </div>
+
+            <!-- Pipeline Dashboard -->
+            <div id="pipeline-dashboard" class="pipeline-dashboard-grid" style="display: none; margin-top: 30px;">
+                <div class="pipeline-stages-side">
+                    <div id="pipeline-stages-container"></div>
+                </div>
+                <div class="pipeline-logs-side">
+                    <div id="pipeline-console" class="log-console"></div>
+                </div>
+            </div>
+
+            <!-- Final Pipeline Results -->
+            <div id="pipeline-results" class="glass-card result-container final-report-card"
+                style="display: {{ 'block' if has_clean else 'none' }};">
+                <div class="card-header purple-glow">REPORT DEPLOYED</div>
+
+                <div class="stats-bar">
+                    <i class="fas fa-check-circle" style="color: var(--neon-c);"></i>
+                    <span id="pipe-res-stats">
+                        {% if has_clean and stats %}Clean Data: {{ stats.rows }} rows × {{ stats.cols }} columns{% else %}Engine Analysis Complete{% endif %}
+                    </span>
+                </div>
+
+                <div class="action-footer">
+                    <a id="pipe-view-btn" href="{{ report_view_url or '#' }}" class="action-btn cyan-btn"
+                        onclick="event.preventDefault(); openReportModal(this.href);">
+                        <i class="fas fa-eye"></i> VIEW
+                    </a>
+                    <a id="pipe-download-btn" href="{{ report_download_url or '#' }}" download class="action-btn purple-btn">
+                        <i class="fas fa-download"></i> DOWNLOAD
+                    </a>
+                </div>
+
+                <div class="action-footer"
+                    style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.06);">
+                    <a href="/phase2" class="action-btn cyan-btn"
+                        style="text-decoration:none;display:inline-flex;align-items:center;gap:8px;">
+                        <i class="fas fa-chart-bar"></i> Phase 2 — Visualization
+                    </a>
+                </div>
+
+                <!-- EDA results hint — draws attention to the finished EDA page -->
+                <a href="/eda_result" id="eda-ready-hint" class="eda-ready-hint">
+                    <div class="eda-ready-hint-icon"><i class="fas fa-wand-magic-sparkles"></i></div>
+                    <div class="eda-ready-hint-text">
+                        <strong>Your EDA page is ready</strong>
+                        <span>Tap to see the full explanation & insights</span>
+                    </div>
+                    <i class="fas fa-arrow-right eda-ready-hint-arrow"></i>
+                </a>
+            </div>
+
+            <div class="stream-wrapper">
+                <button type="button" id="stream-btn" class="action-btn purple-btn"
+                    style="display: none; margin-top:20px;">
+                    LIVE PIPELINE
+                </button>
+                <div class="ring"></div>
+            </div>
+
+        </div>
+        <!-- ==================== SIDEBAR NAVIGATION ==================== -->
+        {% include "components/sidebar.html" %}
+
+    </div>
+
+    <!-- Report Preview Modal — keeps "View Report" on this page instead of a new tab -->
+    <div id="report-modal-overlay" class="report-modal-overlay">
+        <div class="report-modal-box" id="report-modal-box">
+            <div class="report-modal-header">
+                <span><i class="fas fa-file-lines"></i> Report Preview</span>
+                <div class="report-modal-header-actions">
+                    <button type="button" id="report-modal-expand" class="report-modal-expand" title="Maximize" aria-label="Maximize">
+                        <i class="fas fa-expand"></i>
+                    </button>
+                    <button type="button" id="report-modal-close" class="report-modal-close" aria-label="Close">&times;</button>
+                </div>
+            </div>
+            <iframe id="report-modal-iframe" class="report-modal-iframe" src="about:blank"></iframe>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/gh/michalsnik/aos@2.3.1/dist/aos.js"></script>
+
+    <script src="{{ url_for('static', filename='scripts/pipeline_logic.js') }}"></script>
+    <script src="{{ url_for('static', filename='scripts/app_shell.js') }}"></script>
+
+    <script>
+
+        // ==========================================
+        // Application Initialization
+        // ==========================================
+        if (typeof AOS !== 'undefined') { AOS.init(); }
+        const fileInput = document.getElementById('real-file');
+        const fileStatus = document.getElementById('file-status');
+        const statusLabel = document.querySelector('.status-label');
+        const startBtn = document.getElementById('start-btn');
+        const resultsArea = document.getElementById('results-area');
+        const errorBox = document.getElementById('error-message');
+        const streamBtn = document.getElementById('stream-btn');
+        const streamWrapper = document.querySelector('.stream-wrapper');
+        const dashboard = document.getElementById('pipeline-dashboard');
+        const sidebar = document.getElementById('sidebar');
+
+        // ==========================================
+        // Report Preview Modal
+        // ==========================================
+        function openReportModal(url) {
+            if (!url || url === '#') return;
+            document.getElementById('report-modal-iframe').src = url;
+            document.getElementById('report-modal-overlay').classList.add('open');
+        }
+        function closeReportModal() {
+            document.getElementById('report-modal-overlay').classList.remove('open');
+            document.getElementById('report-modal-iframe').src = 'about:blank';
+            document.getElementById('report-modal-box').classList.remove('maximized');
+            const expandBtn = document.getElementById('report-modal-expand');
+            expandBtn.innerHTML = '<i class="fas fa-expand"></i>';
+            expandBtn.title = 'Maximize';
+        }
+        document.getElementById('report-modal-close').onclick = closeReportModal;
+        document.getElementById('report-modal-expand').onclick = () => {
+            const box = document.getElementById('report-modal-box');
+            const expandBtn = document.getElementById('report-modal-expand');
+            const isMax = box.classList.toggle('maximized');
+            expandBtn.innerHTML = isMax ? '<i class="fas fa-compress"></i>' : '<i class="fas fa-expand"></i>';
+            expandBtn.title = isMax ? 'Restore' : 'Maximize';
+        };
+        document.getElementById('report-modal-overlay').onclick = (e) => {
+            if (e.target.id === 'report-modal-overlay') closeReportModal();
+        };
+
+        // ==========================================
+        // Helpers
+        // ==========================================
+        // Long file names (e.g. "Datafiniti_Amazon_Consumer_Reviews_of_
+        // Amazon_Products_May19.csv") break the fixed-width browse-card
+        // layout if shown in full. We shorten from the middle and keep
+        // the extension, and always keep the full name available via
+        // the `title` attribute (hover tooltip).
+        function formatFileName(name, maxLen = 34) {
+            if (name.length <= maxLen) return name;
+            const dotIndex = name.lastIndexOf('.');
+            const ext = dotIndex > -1 ? name.slice(dotIndex) : '';
+            const base = dotIndex > -1 ? name.slice(0, dotIndex) : name;
+            const keep = Math.max(maxLen - ext.length - 3, 4); // 3 chars for "..."
+            const front = Math.ceil(keep * 0.6);
+            const back = Math.floor(keep * 0.4);
+            return base.slice(0, front) + '...' + base.slice(base.length - back) + ext;
+        }
+
+        // ==========================================
+        // File Management Functions
+        // ==========================================
+        async function clearSelectedFile() {
+            await fetch('/clear-data', { method: 'POST' });
+
+            if (typeof clearChat === "function") {
+                clearChat();
+            }
+
+            fileInput.value = "";
+            fileStatus.innerText = "Select Data File (CSV/Excel)";
+            fileStatus.removeAttribute('title');
+            fileStatus.style.color = "";
+            document.getElementById('clear-file-btn').style.display = "none";
+            resultsArea.style.display = "none";
+            if (dashboard) dashboard.style.display = "none";
+            const pipeResults = document.getElementById('pipeline-results');
+            if (pipeResults) pipeResults.style.display = "none";
+            streamBtn.style.display = "none";
+            streamBtn.disabled = false;
+            streamBtn.innerText = "LIVE PIPELINE";
+            streamWrapper.classList.remove('loading');
+            if (statusLabel) {
+                statusLabel.innerText = "ENGINE READY";
+                statusLabel.style.color = "var(--neon-c)";
+            }
+            errorBox.style.display = "none";
+            if (typeof resetPipeline === 'function') resetPipeline();
+            if (typeof clearExcludeColumnsUI === 'function') clearExcludeColumnsUI();
+        }
+
+        // ==========================================
+        // File Selection Handler
+        // ==========================================
+        fileInput.onchange = () => {
+            errorBox.style.display = "none";
+            errorBox.innerText = "";
+
+            if (fileInput.files.length > 0) {
+                const rawName = fileInput.files[0].name;
+                fileStatus.innerText = "Selected: " + formatFileName(rawName);
+                fileStatus.title = rawName; // full name on hover
+                fileStatus.style.color = "#14ffd0";
+                document.getElementById('clear-file-btn').style.display = "inline-block";
+
+                resultsArea.style.display = "none";
+                if (dashboard) dashboard.style.display = "none";
+                const pipeResults = document.getElementById('pipeline-results');
+                if (pipeResults) pipeResults.style.display = "none";
+                streamBtn.style.display = "none";
+                streamBtn.disabled = false;
+                streamBtn.innerText = "LIVE PIPELINE";
+                streamWrapper.classList.remove('loading');
+                if (statusLabel) {
+                    statusLabel.innerText = "ENGINE READY";
+                    statusLabel.style.color = "var(--neon-c)";
+                }
+                if (typeof resetPipeline === 'function') resetPipeline();
+            } else {
+                fileStatus.innerText = "Select Data File (CSV/Excel)";
+                fileStatus.style.color = "";
+            }
+        };
+
+        // ==========================================
+        // Form Submission (AJAX)
+        // ==========================================
+        document.getElementById('main-ai-form').onsubmit = async (e) => {
+            e.preventDefault();
+            errorBox.style.display = "none";
+
+            if (!fileInput.files.length) {
+                errorBox.innerText = "⚠ Please select a file first!";
+                errorBox.style.display = "block";
+                return;
+            }
+
+            if (statusLabel) {
+                statusLabel.innerText = "PROCESSING PREVIEW...";
+                statusLabel.style.color = "#a333ff";
+            }
+            startBtn.disabled = true;
+            const formData = new FormData(e.target);
+
+            try {
+                const response = await fetch('/process', { method: 'POST', body: formData });
+                const result = await response.json();
+
+                if (result.status === "success") {
+                    if (typeof clearChat === "function") {
+                        clearChat();
+                    }
+                    if (statusLabel) {
+                        statusLabel.innerText = "ENGINE COMPLETE";
+                        statusLabel.style.color = "#14ffd0";
+                    }
+                    resultsArea.style.display = 'block';
+                    document.getElementById('table-preview').innerHTML = result.preview;
+                    document.getElementById('res-rows').innerText = "Rows: " + result.rows;
+                    document.getElementById('res-cols').innerText = "Cols: " + result.cols;
+                    document.getElementById('view-btn').href = result.view_url;
+                    document.getElementById('download-btn').href = result.download_url;
+
+                    if (typeof populateExcludeColumnsUI === 'function' && result.columns) {
+                        populateExcludeColumnsUI(result.columns);
+                    }
+
+                    streamBtn.style.display = "inline-block";
+                    streamBtn.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    errorBox.innerText = "Engine Error: " + result.message;
+                    errorBox.style.display = "block";
+                }
+            } catch (err) {
+                errorBox.innerText = "Connection Failed!";
+                errorBox.style.display = "block";
+            } finally {
+                startBtn.disabled = false;
+            }
+
+        };
+
+        // ==========================================
+        // Live Pipeline Streaming
+        // ==========================================
+        streamBtn.onclick = () => {
+            dashboard.style.display = 'grid';
+            streamWrapper.classList.add('loading');
+            streamBtn.innerText = "ENGINE RUNNING...";
+            streamBtn.disabled = true;
+            dashboard.scrollIntoView({ behavior: 'smooth' });
+
+            renderPipeline();
+            startPipelineStream(null, getDevPipelineParams());
+        };
+
+        // ==========================================
+        // Pipeline Reset Functions
+        // ==========================================
+        function resetPipeline() {
+            const consoleBox = document.getElementById("pipeline-console");
+            if (consoleBox) {
+                consoleBox.innerHTML = '<div class="log-entry">System Standby. Ready for injection.</div>';
+            }
+            document.querySelectorAll(".stage-item").forEach(item => {
+                item.classList.remove("active", "completed");
+                const p = item.querySelector(".stage-info p");
+                if (p) p.innerText = "Waiting for engine...";
+            });
+        }
+
+        function restartPipelineUI() {
+            streamBtn.disabled = false;
+            streamBtn.innerText = "RUN NEW PIPELINE";
+            streamBtn.style.background = "var(--neon-p)";
+            dashboard.style.display = 'none';
+            document.getElementById('pipeline-results').style.display = 'none';
+            resetPipeline();
+
+            streamBtn.onclick = () => {
+                dashboard.style.display = 'grid';
+                streamWrapper.classList.add('loading');
+                streamBtn.innerText = "ENGINE RUNNING...";
+                streamBtn.disabled = true;
+                dashboard.scrollIntoView({ behavior: 'smooth' });
+                renderPipeline();
+                startPipelineStream(null, getDevPipelineParams());
+            };
+        }
+
+        // ==========================================
+        // Final Report Handler
+        // ==========================================
+        function handleFinalReport(data) {
+            if (streamWrapper) streamWrapper.classList.remove('loading');
+            if (streamBtn) {
+                streamBtn.innerText = "RESTART ENGINE";
+                streamBtn.disabled = false;
+                streamBtn.style.background = "#07cda5";
+                streamBtn.onclick = () => restartPipelineUI();
+            }
+            const pipeResults = document.getElementById('pipeline-results');
+            pipeResults.style.display = 'block';
+            document.getElementById('pipe-view-btn').href = data.view_url;
+            document.getElementById('pipe-download-btn').href = data.download_url;
+            if (data.rows && data.cols) {
+                document.getElementById('pipe-res-stats').innerText =
+                    `Clean Data: ${data.rows} rows × ${data.cols} columns`;
+            }
+            pipeResults.scrollIntoView({ behavior: 'smooth' });
+            const resultsBtn = document.getElementById("nav-enter-results");
+
+            if (resultsBtn) {
+                resultsBtn.style.display = "flex";
+            }
+        }
+
+    </script>
+    {% if has_clean %}
+    <script>
+        // The pipeline-results card above is already visible because the
+        // SERVER confirmed a clean dataset exists (has_clean) — this just
+        // brings the "Live Pipeline" button's label/behavior in line with
+        // that, for whenever this page loads WITHOUT a live SSE run just
+        // having finished (e.g. navigated back from another page). Doesn't
+        // call restartPipelineUI() itself, since that hides pipeline-results
+        // — which we want to stay visible here.
+        if (streamBtn) {
+            streamBtn.style.display = 'inline-block';
+            streamBtn.disabled = false;
+            streamBtn.innerText = 'RESTART ENGINE';
+            streamBtn.style.background = '#07cda5';
+            streamBtn.onclick = () => restartPipelineUI();
+        }
+
+        // Replay the ACTUAL recorded stages/console log from the last run
+        // (persisted server-side in pipeline_log_path — see /pipeline-stream
+        // in app.py) so the dashboard looks exactly like it did right after
+        // the engine finished, instead of coming back empty on every new
+        // page load.
+        const PIPELINE_LOG_INITIAL = {{ pipeline_log | tojson }};
+        if (PIPELINE_LOG_INITIAL.length && dashboard) {
+            dashboard.style.display = 'grid';
+            if (typeof renderPipeline === 'function') renderPipeline();
+            PIPELINE_LOG_INITIAL.forEach(entry => {
+                if (typeof updateStage === 'function') {
+                    updateStage(entry.stage, entry.message, entry.progress, entry.time);
+                }
+            });
+        }
+    </script>
+    {% endif %}
+    <script>
+        // "Enter Results" used to be a button revealed here once the pipeline
+        // finished. It now lives permanently in the sidebar instead (see
+        // components/sidebar.html + app.py's sidebar_has_clean), so it
+        // shows up the instant a clean dataset exists on the backend — no
+        // matter which page you're on — and disappears automatically on
+        // Clear Data / refresh / a new upload. This function is kept as a
+        // harmless no-op so initEngine()'s existing .then() call below
+        // doesn't need touching.
+        function onPipelineReady() { }
+
+        initEngine().then(() => {
+            onPipelineReady();
+        });
+
+    </script>
+    <script src="{{ url_for('static', filename='scripts/chatbot.js') }}"></script>
+</body>
+
+</html>
